@@ -76,6 +76,7 @@
     scard.expMonth = card.expMonth;
     scard.expYear = card.expYear;
     scard.cvc = card.cvc;
+    scard.addressZip = card.addressZip; // Oana change
 
     [self pendingHandler:YES];
 
