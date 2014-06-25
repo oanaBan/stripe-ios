@@ -28,6 +28,7 @@ typedef void (^STPTokenBlock)(STPToken *token, NSError *error);
 @property (nonatomic, copy) NSString *key;
 @property (nonatomic, weak) IBOutlet id <STPViewDelegate> delegate;
 @property (nonatomic, readonly) BOOL pending;
+@property (nonatomic, retain) PKAddressZip *addressZip; // Oana change
 
 - (void)createToken:(STPTokenBlock)block;
 
