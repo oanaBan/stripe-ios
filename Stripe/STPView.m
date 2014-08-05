@@ -14,6 +14,14 @@
 - (void)setupViews;
 {
     self.paymentView = [[PKView alloc] initWithFrame:CGRectMake(0, 0, 290, 55)];
+    
+    // Oana change - remove the textField background imageView
+    for (UIView *view in [self.paymentView subviews]) {
+        if ([view isKindOfClass:[UIImageView class]]) {
+            [view removeFromSuperview];
+        }
+    }
+    
     self.paymentView.delegate = self;
     [self addSubview:self.paymentView];
 }
