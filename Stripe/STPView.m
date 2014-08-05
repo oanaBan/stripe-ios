@@ -17,7 +17,7 @@
     
     // Oana change - remove the textField background imageView
     for (UIView *view in [self.paymentView subviews]) {
-        if ([view isKindOfClass:[UIImageView class]]) {
+        if ([view isKindOfClass:[UIImageView class]] && ![view isEqual:self.paymentView.placeholderView]) {
             [view removeFromSuperview];
         }
     }
