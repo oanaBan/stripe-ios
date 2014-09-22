@@ -6,6 +6,7 @@
 //
 
 #import "STPView.h"
+#import "PKTextField.h" // Oana change
 
 @implementation STPView
 
@@ -95,6 +96,11 @@
                          block(token, error);
                      }];
 
+}
+
+// Oana change
+- (void)fireCardNumberField {
+    [self.paymentView.cardNumberField becomeFirstResponder];
 }
 
 @end

@@ -31,5 +31,6 @@ typedef void (^STPTokenBlock)(STPToken *token, NSError *error);
 @property (nonatomic, retain) PKAddressZip *addressZip; // Oana change
 
 - (void)createToken:(STPTokenBlock)block;
+- (void)fireCardNumberField; // Oana change
 
 @end
