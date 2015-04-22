@@ -13,7 +13,7 @@ Pod::Spec.new do |s|
   s.requires_arc          = true
   s.ios.deployment_target = '5.0'
 
-  s.dependency            'PaymentKit', :git => 'https://github.com/oanaBan/PaymentKit', '~> 1.0.5'
+  s.dependency            'BOPaymentKit', '~> 1.0.5'
 
 
 end
