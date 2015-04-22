@@ -18,8 +18,8 @@
 #define kPKViewCardZipCodeFieldStartX 270 + 200 // Oana change
 
 #define kPKViewCardExpiryFieldEndX 28 // Oana change
-#define kPKViewCardCVCFieldEndX 101 // Oana change
-#define kPKViewCardZipCodeFieldEndX 160 // Oana change
+#define kPKViewCardCVCFieldEndX 99 // Oana change
+#define kPKViewCardZipCodeFieldEndX 156 // Oana change
 
 #import "PKView.h"
 #import "PKTextField.h"
