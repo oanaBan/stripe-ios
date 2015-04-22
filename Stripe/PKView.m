@@ -167,7 +167,7 @@
 // Oana change
 - (void)setupCardZipCodeField
 {
-    self.cardZipCodeField = [[PKTextField alloc] initWithFrame:CGRectMake(kPKViewCardZipCodeFieldStartX, 0, 80, 20)];
+    self.cardZipCodeField = [[PKTextField alloc] initWithFrame:CGRectMake(kPKViewCardZipCodeFieldStartX, 0, 90, 20)];
     self.cardZipCodeField.delegate = self;
     self.cardZipCodeField.placeholder = @"ZIP Code";
     self.cardZipCodeField.keyboardType = UIKeyboardTypeNumberPad;
