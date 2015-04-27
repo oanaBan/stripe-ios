@@ -170,7 +170,6 @@
     self.cardZipCodeField = [[PKTextField alloc] initWithFrame:CGRectMake(kPKViewCardZipCodeFieldStartX, 0, 90, 20)];
     self.cardZipCodeField.delegate = self;
     self.cardZipCodeField.placeholder = @"ZIP Code";
-    self.cardZipCodeField.keyboardType = UIKeyboardTypeNumberPad;
     self.cardZipCodeField.textColor = DarkGreyColor;
     self.cardZipCodeField.font = DefaultBoldFont;
     
