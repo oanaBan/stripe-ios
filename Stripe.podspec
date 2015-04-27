@@ -8,6 +8,7 @@ Pod::Spec.new do |s|
   s.source                = { :git => "https://github.com/stripe/stripe-ios.git", :tag => "v1.1.4"}
   s.source_files          = 'Stripe/*.{h,m}'
   s.public_header_files   = 'Stripe/*.h'
+  s.resources             = 'Stripe/Resources/Cards/*.png', 'Stripe/Resources/*.png'
   s.platform              = :ios
   s.frameworks            = 'Foundation', 'QuartzCore', 'Security'
   s.requires_arc          = true
