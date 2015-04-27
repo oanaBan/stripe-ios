@@ -66,36 +66,40 @@
 - (void)createToken:(STPTokenBlock)block
 {
     if (pending) return;
-
+    
     if (![self.paymentView isValid]) {
         NSError *error = [[NSError alloc] initWithDomain:StripeDomain
                                                     code:STPCardError
                                                 userInfo:@{NSLocalizedDescriptionKey : STPCardErrorUserMessage}];
-
+        
         block(nil, error);
         return;
     }
-
+    
     [self endEditing:YES];
-
+    
     PKCard *card = self.paymentView.card;
     STPCard *scard = [[STPCard alloc] init];
-
+    
     scard.number = card.number;
     scard.expMonth = card.expMonth;
     scard.expYear = card.expYear;
     scard.cvc = card.cvc;
-    scard.addressZip = [self.addressZip string]; // Oana change
-
+    scard.addressZip = card.addressZip; // Oana change
+    
+    if (card.addressZip.length == 0) {
+        scard.addressZip = [self.addressZip string]; // Oana change
+    }
+    
     [self pendingHandler:YES];
-
+    
     [Stripe createTokenWithCard:scard
                  publishableKey:self.key
                      completion:^(STPToken *token, NSError *error) {
                          [self pendingHandler:NO];
                          block(token, error);
                      }];
-
+    
 }
 
 // Oana change
