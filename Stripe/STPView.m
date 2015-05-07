@@ -87,7 +87,7 @@
     scard.cvc = card.cvc;
     scard.addressZip = card.addressZip; // Oana change
     
-    if (card.addressZip.length == 0) {
+    if (card.addressZip.length < 5) {
         scard.addressZip = [self.addressZip string]; // Oana change
     }
     
@@ -99,7 +99,6 @@
                          [self pendingHandler:NO];
                          block(token, error);
                      }];
-    
 }
 
 // Oana change
