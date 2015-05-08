@@ -32,5 +32,6 @@ typedef void (^STPTokenBlock)(STPToken *token, NSError *error);
 
 - (void)createToken:(STPTokenBlock)block;
 - (void)fireCardNumberField; // Oana change
+- (void)showKeyboard; // Oana change
 
 @end

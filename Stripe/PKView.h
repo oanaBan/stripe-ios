@@ -41,4 +41,6 @@
 @property (nonatomic, weak) id <PKViewDelegate> delegate;
 @property (readonly) PKCard *card;
 
+- (PKTextField *)nextFirstResponder; // Oana change
+
 @end

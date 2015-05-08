@@ -106,4 +106,9 @@
     [self.paymentView.cardNumberField becomeFirstResponder];
 }
 
+// Oana change
+- (void)showKeyboard {
+    [[self.paymentView nextFirstResponder] becomeFirstResponder];
+}
+
 @end

@@ -626,7 +626,7 @@
     if (self.firstInvalidField)
         return self.firstInvalidField;
     
-    return self.cardCVCField;
+    return self.cardZipCodeField; // Oana change
 }
 
 - (BOOL)isFirstResponder;
