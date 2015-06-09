@@ -524,11 +524,15 @@
     // Strip non-digits
     self.cardCVCField.text = [cardCVC string];
     
-    if ([cardCVC isValid]) {
+    // Gil commented out
+//    if ([cardCVC isValid]) {
+//        [self textFieldIsValid:self.cardCVCField];
+//        [self stateCardZipCode];
+//    } else
+    
+    if ([cardCVC isValidWithType:cardType]) {
         [self textFieldIsValid:self.cardCVCField];
         [self stateCardZipCode];
-    } else if ([cardCVC isValidWithType:cardType]) {
-        [self textFieldIsValid:self.cardCVCField];
     } else {
         [self textFieldIsInvalid:self.cardCVCField withErrors:NO];
     }
