@@ -9,31 +9,185 @@
 #import "STPCard.h"
 #import "StripeError.h"
 
-@interface STPCard () {
-    /*
-     These two properties are not synthesized because they can be set by
-     responses from the Stripe API or be dynamically generated from the number
-     */
-    NSString *last4;
-    NSString *type;
-}
+@interface STPCard ()
 
-+ (BOOL)isLuhnValidString:(NSString *)number;
-+ (BOOL)isNumericOnlyString:(NSString *)aString;
-+ (BOOL)handleValidationErrorForParameter:(NSString *)parameter error:(NSError **)outError;
-+ (NSError *)createErrorWithMessage:(NSString *)userMessage parameter:(NSString *)parameter cardErrorCode:(NSString *)cardErrorCode devErrorMessage:(NSString *)devMessage;
-+ (NSInteger)currentYear;
-+ (BOOL)isExpiredMonth:(NSInteger)month andYear:(NSInteger)year;
+@property (nonatomic, readwrite) NSString *cardId;
+@property (nonatomic, readwrite) NSString *last4;
+@property (nonatomic, readwrite) NSString *dynamicLast4;
+@property (nonatomic, readwrite) STPCardBrand brand;
+@property (nonatomic, readwrite) STPCardFundingType funding;
+@property (nonatomic, readwrite) NSString *fingerprint;
+@property (nonatomic, readwrite) NSString *country;
+
 @end
 
-
 @implementation STPCard
-@synthesize number, expMonth, expYear, cvc, name, addressLine1, addressLine2, addressZip, addressCity, addressState, addressCountry, country, object, fingerprint;
-@dynamic last4, type;
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _brand = STPCardBrandUnknown;
+        _funding = STPCardFundingTypeOther;
+    }
+
+    return self;
+}
+
+- (NSString *)last4 {
+    if (_last4) {
+        return _last4;
+    } else if (self.number && self.number.length >= 4) {
+        return [self.number substringFromIndex:(self.number.length - 4)];
+    } else {
+        return nil;
+    }
+}
+
+- (STPCardBrand)brand {
+    if (_brand == STPCardBrandUnknown) {
+        return [self.class cardTypeFromNumber:self.number];
+    }
+    return _brand;
+}
+
+- (NSString *)type {
+    switch (self.brand) {
+    case STPCardBrandAmex:
+        return @"American Express";
+    case STPCardBrandDinersClub:
+        return @"Diners Club";
+    case STPCardBrandDiscover:
+        return @"Discover";
+    case STPCardBrandJCB:
+        return @"JCB";
+    case STPCardBrandMasterCard:
+        return @"MasterCard";
+    case STPCardBrandVisa:
+        return @"Visa";
+    default:
+        return @"Unknown";
+    }
+}
+
+- (BOOL)validateNumber:(id *)ioValue error:(NSError **)outError {
+    if (*ioValue == nil) {
+        return [self.class handleValidationErrorForParameter:@"number" error:outError];
+    }
+
+    NSString *ioValueString = (NSString *)*ioValue;
+    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"[\\s+|-]" options:NSRegularExpressionCaseInsensitive error:NULL];
+
+    NSString *rawNumber = [regex stringByReplacingMatchesInString:ioValueString options:0 range:NSMakeRange(0, [ioValueString length]) withTemplate:@""];
+
+    if (rawNumber == nil || rawNumber.length < 10 || rawNumber.length > 19 || ![self.class isLuhnValidString:rawNumber]) {
+        return [self.class handleValidationErrorForParameter:@"number" error:outError];
+    }
+    return YES;
+}
+
+- (BOOL)validateCvc:(id *)ioValue error:(NSError **)outError {
+    if (*ioValue == nil) {
+        return [self.class handleValidationErrorForParameter:@"number" error:outError];
+    }
+    NSString *cvc = [(NSString *)*ioValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    BOOL validCvcLength = ({
+        BOOL valid;
+        switch (self.brand) {
+        case STPCardBrandAmex:
+        case STPCardBrandUnknown:
+            valid = (cvc.length == 3 || cvc.length == 4);
+            break;
+        default:
+            valid = (cvc.length == 3);
+            break;
+        }
+        valid;
+    });
+
+    if (![self.class isNumericOnlyString:cvc] || !validCvcLength) {
+        return [self.class handleValidationErrorForParameter:@"cvc" error:outError];
+    }
+    return YES;
+}
+
+- (BOOL)validateExpMonth:(id *)ioValue error:(NSError **)outError {
+    if (*ioValue == nil) {
+        return [self.class handleValidationErrorForParameter:@"expMonth" error:outError];
+    }
+
+    NSString *ioValueString = [(NSString *)*ioValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    NSInteger expMonthInt = [ioValueString integerValue];
+
+    if ((![self.class isNumericOnlyString:ioValueString] || expMonthInt > 12 || expMonthInt < 1)) {
+        return [self.class handleValidationErrorForParameter:@"expMonth" error:outError];
+    } else if ([self expYear] && [self.class isExpiredMonth:expMonthInt andYear:[self expYear] atDate:[NSDate date]]) {
+        NSUInteger currentYear = [self.class currentYear];
+        // If the year is in the past, this is actually a problem with the expYear parameter, but it still means this month is not a valid month. This is pretty
+        // rare - it means someone set expYear on the card without validating it
+        if (currentYear > [self expYear]) {
+            return [self.class handleValidationErrorForParameter:@"expYear" error:outError];
+        } else {
+            return [self.class handleValidationErrorForParameter:@"expMonth" error:outError];
+        }
+    }
+    return YES;
+}
+
+- (BOOL)validateExpYear:(id *)ioValue error:(NSError **)outError {
+    if (*ioValue == nil) {
+        return [self.class handleValidationErrorForParameter:@"expYear" error:outError];
+    }
+
+    NSString *ioValueString = [(NSString *)*ioValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    NSInteger expYearInt = [ioValueString integerValue];
+
+    if ((![self.class isNumericOnlyString:ioValueString] || expYearInt < [self.class currentYear])) {
+        return [self.class handleValidationErrorForParameter:@"expYear" error:outError];
+    } else if ([self expMonth] && [self.class isExpiredMonth:[self expMonth] andYear:expYearInt atDate:[NSDate date]]) {
+        return [self.class handleValidationErrorForParameter:@"expMonth" error:outError];
+    }
+
+    return YES;
+}
+
+- (BOOL)validateCardReturningError:(NSError **)outError {
+    // Order matters here
+    NSString *numberRef = [self number];
+    NSString *expMonthRef = [NSString stringWithFormat:@"%lu", (unsigned long)[self expMonth]];
+    NSString *expYearRef = [NSString stringWithFormat:@"%lu", (unsigned long)[self expYear]];
+    NSString *cvcRef = [self cvc];
+
+    // Make sure expMonth, expYear, and number are set.  Validate CVC if it is provided
+    return [self validateNumber:&numberRef error:outError] && [self validateExpYear:&expYearRef error:outError] &&
+           [self validateExpMonth:&expMonthRef error:outError] && (cvcRef == nil || [self validateCvc:&cvcRef error:outError]);
+}
+
+- (BOOL)isEqual:(id)other {
+    return [self isEqualToCard:other];
+}
+
+- (NSUInteger)hash {
+    return [self.fingerprint hash] ?: [self.number hash];
+}
+
+- (BOOL)isEqualToCard:(STPCard *)other {
+    if (self == other) {
+        return YES;
+    }
+
+    if (!other || ![other isKindOfClass:self.class]) {
+        return NO;
+    }
+
+    return self.expMonth == other.expMonth && self.expYear == other.expYear && [self.number ?: @"" isEqualToString:other.number ?: @""] &&
+           [self.cvc ?: @"" isEqualToString:other.cvc ?: @""] && [self.name ?: @"" isEqualToString:other.name ?: @""] &&
+           [self.addressLine1 ?: @"" isEqualToString:other.addressLine1 ?: @""] && [self.addressLine2 ?: @"" isEqualToString:other.addressLine2 ?: @""] &&
+           [self.addressCity ?: @"" isEqualToString:other.addressCity ?: @""] && [self.addressState ?: @"" isEqualToString:other.addressState ?: @""] &&
+           [self.addressZip ?: @"" isEqualToString:other.addressZip ?: @""] && [self.addressCountry ?: @"" isEqualToString:other.addressCountry ?: @""];
+}
 
 #pragma mark Private Helpers
-+ (BOOL)isLuhnValidString:(NSString *)number
-{
++ (BOOL)isLuhnValidString:(NSString *)number {
     BOOL isOdd = true;
     NSInteger sum = 0;
 
@@ -41,266 +195,195 @@
     for (NSInteger index = [number length] - 1; index >= 0; index--) {
         NSString *digit = [number substringWithRange:NSMakeRange(index, 1)];
         NSNumber *digitNumber = [numberFormatter numberFromString:digit];
-        if (digitNumber == nil)
+
+        if (digitNumber == nil) {
             return NO;
+        }
+
         NSInteger digitInteger = [digitNumber intValue];
         isOdd = !isOdd;
-        if (isOdd)
+        if (isOdd) {
             digitInteger *= 2;
+        }
 
-        if (digitInteger > 9)
+        if (digitInteger > 9) {
             digitInteger -= 9;
+        }
 
         sum += digitInteger;
     }
 
-    if (sum % 10 == 0)
-        return YES;
-    else
-        return NO;
+    return sum % 10 == 0;
 }
 
-+ (BOOL)isNumericOnlyString:(NSString *)aString
-{
++ (BOOL)isNumericOnlyString:(NSString *)aString {
     NSCharacterSet *numericOnly = [NSCharacterSet decimalDigitCharacterSet];
     NSCharacterSet *aStringSet = [NSCharacterSet characterSetWithCharactersInString:aString];
 
     return [numericOnly isSupersetOfSet:aStringSet];
 }
 
-+ (BOOL)isExpiredMonth:(NSInteger)month andYear:(NSInteger)year
-{
-    NSDate *now = [NSDate date];
-
-    // Cards expire at end of month
-    month = month + 1;
-    NSCalendar *calendar = [[NSCalendar alloc] initWithCalendarIdentifier:NSGregorianCalendar];
-    NSDateComponents *components = [[NSDateComponents alloc] init];
-    [components setYear:year];
-    [components setMonth:month];
-    [components setDay:1];
-    NSDate *expiryDate = [calendar dateFromComponents:components];
-    return ([expiryDate compare:now] == NSOrderedAscending);
++ (NSCalendar *)gregorianCalendar {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated"
+#pragma clang diagnostic ignored "-Wunreachable-code"
+#pragma clang diagnostic ignored "-Wtautological-compare"
+    NSString *identifier = (&NSCalendarIdentifierGregorian != nil) ? NSCalendarIdentifierGregorian : NSGregorianCalendar;
+#pragma clang diagnostic pop
+    return [[NSCalendar alloc] initWithCalendarIdentifier:identifier];
 }
 
-+ (NSInteger)currentYear
-{
-    NSCalendar *gregorian = [[NSCalendar alloc] initWithCalendarIdentifier:NSGregorianCalendar];
-    NSDateComponents *components = [gregorian components:NSYearCalendarUnit fromDate:[NSDate date]];
++ (BOOL)isExpiredMonth:(NSInteger)month andYear:(NSInteger)year atDate:(NSDate *)date {
+    NSDateComponents *components = [[NSDateComponents alloc] init];
+    [components setYear:year];
+    // Cards expire at end of month
+    [components setMonth:month + 1];
+    [components setDay:1];
+    NSDate *expiryDate = [[self gregorianCalendar] dateFromComponents:components];
+    return ([expiryDate compare:date] == NSOrderedAscending);
+}
+
++ (NSInteger)currentYear {
+    NSDateComponents *components = [[self gregorianCalendar] components:NSCalendarUnitYear fromDate:[NSDate date]];
     return [components year];
 }
 
-+ (BOOL)handleValidationErrorForParameter:(NSString *)parameter error:(NSError **)outError
-{
++ (BOOL)handleValidationErrorForParameter:(NSString *)parameter error:(NSError **)outError {
     if (outError != nil) {
-        if ([parameter isEqualToString:@"number"])
+        if ([parameter isEqualToString:@"number"]) {
             *outError = [self createErrorWithMessage:STPCardErrorInvalidNumberUserMessage
                                            parameter:parameter
                                        cardErrorCode:STPInvalidNumber
                                      devErrorMessage:@"Card number must be between 10 and 19 digits long and Luhn valid."];
-        else if ([parameter isEqualToString:@"cvc"])
+        } else if ([parameter isEqualToString:@"cvc"]) {
             *outError = [self createErrorWithMessage:STPCardErrorInvalidCVCUserMessage
                                            parameter:parameter
                                        cardErrorCode:STPInvalidCVC
-                                     devErrorMessage:@"Card CVC must be numeric, 3 digits for Visa, Discover, MasterCard, JCB, and Discover cards, and 4 digits for American Express cards."];
-        else if ([parameter isEqualToString:@"expMonth"])
+                                     devErrorMessage:@"Card CVC must be numeric, 3 digits for Visa, Discover, MasterCard, JCB, and Discover cards, and 3 or 4 "
+                                     @"digits for American Express cards."];
+        } else if ([parameter isEqualToString:@"expMonth"]) {
             *outError = [self createErrorWithMessage:STPCardErrorInvalidExpMonthUserMessage
                                            parameter:parameter
                                        cardErrorCode:STPInvalidExpMonth
                                      devErrorMessage:@"expMonth must be less than 13"];
-        else if ([parameter isEqualToString:@"expYear"])
+        } else if ([parameter isEqualToString:@"expYear"]) {
             *outError = [self createErrorWithMessage:STPCardErrorInvalidExpYearUserMessage
                                            parameter:parameter
                                        cardErrorCode:STPInvalidExpYear
                                      devErrorMessage:@"expYear must be this year or a year in the future"];
-        else
-                /* This should not be possible since this is a private method so we
-                    know exactly how it is called.  We use STPAPIError for all errors
-                    that are unexpected within the bindings as well.
-                 */
+        } else {
+            // This should not be possible since this is a private method so we
+            // know exactly how it is called.  We use STPAPIError for all errors
+            // that are unexpected within the bindings as well.
             *outError = [[NSError alloc] initWithDomain:StripeDomain
                                                    code:STPAPIError
-                                               userInfo:@{NSLocalizedDescriptionKey : STPUnexpectedError,
-                                                       STPErrorMessageKey : @"There was an error within the Stripe client library when trying to generate the proper validation error. Contact support@stripe.com if you see this."}];
+                                               userInfo:@{
+                                                   NSLocalizedDescriptionKey: STPUnexpectedError,
+                                                   STPErrorMessageKey: @"There was an error within the Stripe client library when trying to generate the "
+                                                   @"proper validation error. Contact support@stripe.com if you see this."
+                                               }];
+        }
     }
     return NO;
 }
 
-+ (NSError *)createErrorWithMessage:(NSString *)userMessage parameter:(NSString *)parameter cardErrorCode:(NSString *)cardErrorCode devErrorMessage:(NSString *)devMessage
-{
++ (NSError *)createErrorWithMessage:(NSString *)userMessage
+                          parameter:(NSString *)parameter
+                      cardErrorCode:(NSString *)cardErrorCode
+                    devErrorMessage:(NSString *)devMessage {
     return [[NSError alloc] initWithDomain:StripeDomain
                                       code:STPCardError
                                   userInfo:@{
-                                          NSLocalizedDescriptionKey : userMessage,
-                                          STPErrorParameterKey : parameter,
-                                          STPCardErrorCodeKey : cardErrorCode,
-                                          STPErrorMessageKey : devMessage
+                                      NSLocalizedDescriptionKey: userMessage,
+                                      STPErrorParameterKey: parameter,
+                                      STPCardErrorCodeKey: cardErrorCode,
+                                      STPErrorMessageKey: devMessage
                                   }];
 }
 
-#pragma mark Public Interface
-- (id)init
-{
-    if (self = [super init])
-        object = @"card";
-    return self;
++ (STPCardBrand)cardTypeFromNumber:(NSString *)number {
+    if ([number hasPrefix:@"34"] || [number hasPrefix:@"37"]) {
+        return STPCardBrandAmex;
+    } else if ([number hasPrefix:@"60"] || [number hasPrefix:@"62"] || [number hasPrefix:@"64"] || [number hasPrefix:@"65"]) {
+        return STPCardBrandDiscover;
+    } else if ([number hasPrefix:@"35"]) {
+        return STPCardBrandJCB;
+    } else if ([number hasPrefix:@"30"] || [number hasPrefix:@"36"] || [number hasPrefix:@"38"] || [number hasPrefix:@"39"]) {
+        return STPCardBrandDinersClub;
+    } else if ([number hasPrefix:@"4"]) {
+        return STPCardBrandVisa;
+    } else if ([number hasPrefix:@"5"]) {
+        return STPCardBrandMasterCard;
+    } else {
+        return STPCardBrandUnknown;
+    }
 }
 
-- (id)initWithAttributeDictionary:(NSDictionary *)attributeDictionary
-{
-    if (self = [self init]) {
-        number = [attributeDictionary valueForKey:@"number"];
-        expMonth = [attributeDictionary[@"expMonth"] intValue];
-        expYear = [attributeDictionary[@"expYear"] intValue];
-        cvc = attributeDictionary[@"cvc"];
-        name = attributeDictionary[@"name"];
-        addressLine1 = attributeDictionary[@"addressLine1"];
-        addressLine2 = attributeDictionary[@"addressLine2"];
-        addressCity = attributeDictionary[@"addressCity"];
-        addressState = attributeDictionary[@"addressState"];
-        addressZip = attributeDictionary[@"addressZip"];
-        addressCountry = attributeDictionary[@"addressCountry"];
-        object = attributeDictionary[@"object"];
-        last4 = attributeDictionary[@"last4"];
-        type = attributeDictionary[@"type"];
-        fingerprint = attributeDictionary[@"fingerprint"];
-        country = attributeDictionary[@"country"];
-    }
-    return self;
-}
-
-- (NSString *)last4
-{
-    if (last4)
-        return last4;
-    else if ([self number])
-        return [number substringFromIndex:([number length] - 4)];
-    else
-        return nil;
-}
-
-- (NSString *)type
-{
-    if (type)
-        return type;
-    else if ([self number]) {
-        NSString *theNumber = [self number];
-        if ([theNumber hasPrefix:@"34"] || [theNumber hasPrefix:@"37"])
-            return @"American Express";
-        else if ([theNumber hasPrefix:@"60"] ||
-                [theNumber hasPrefix:@"62"] ||
-                [theNumber hasPrefix:@"64"] ||
-                [theNumber hasPrefix:@"65"])
-            return @"Discover";
-        else if ([theNumber hasPrefix:@"35"])
-            return @"JCB";
-        else if ([theNumber hasPrefix:@"30"] ||
-                [theNumber hasPrefix:@"36"] ||
-                [theNumber hasPrefix:@"38"] ||
-                [theNumber hasPrefix:@"39"])
-            return @"Diners Club";
-        else if ([theNumber hasPrefix:@"4"])
-            return @"Visa";
-        else if ([theNumber hasPrefix:@"5"])
-            return @"MasterCard";
-        else
-            return @"Unknown";
-    }
-    else
-        return nil;
-}
-
-- (BOOL)validateNumber:(id *)ioValue error:(NSError **)outError
-{
-    if (*ioValue == nil) {
-        return [STPCard handleValidationErrorForParameter:@"number" error:outError];
-    }
-
-    NSError *regexError = nil;
-    NSString *ioValueString = (NSString *) *ioValue;
-    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"[\\s+|-]"
-                                                                           options:NSRegularExpressionCaseInsensitive
-                                                                             error:&regexError];
-
-    NSString *rawNumber = [regex stringByReplacingMatchesInString:ioValueString options:0 range:NSMakeRange(0, [ioValueString length]) withTemplate:@""];
-
-    if (rawNumber == nil || rawNumber.length < 10 || rawNumber.length > 19 || ![STPCard isLuhnValidString:rawNumber]) {
-        return [STPCard handleValidationErrorForParameter:@"number" error:outError];
-    }
-    return YES;
-}
-
-- (BOOL)validateCvc:(id *)ioValue error:(NSError **)outError
-{
-    if (*ioValue == nil) {
-        return [STPCard handleValidationErrorForParameter:@"number" error:outError];
-    }
-    NSString *ioValueString = [(NSString *) *ioValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    NSString *cardType = [self type];
-    BOOL validLength = ((cardType == nil && [ioValueString length] >= 3 && [ioValueString length] <= 4) ||
-            ([cardType isEqualToString:@"American Express"] && [ioValueString length] == 4) ||
-            (![cardType isEqualToString:@"American Express"] && [ioValueString length] == 3));
-
-
-    if (![STPCard isNumericOnlyString:ioValueString] || !validLength) {
-        return [STPCard handleValidationErrorForParameter:@"cvc" error:outError];
-    }
-    return YES;
-}
-
-- (BOOL)validateExpMonth:(id *)ioValue error:(NSError **)outError
-{
-    if (*ioValue == nil) {
-        return [STPCard handleValidationErrorForParameter:@"expMonth" error:outError];
-    }
-    NSString *ioValueString = [(NSString *) *ioValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    NSInteger expMonthInt = [ioValueString integerValue];
-
-    if ((![STPCard isNumericOnlyString:ioValueString] || expMonthInt > 12 || expMonthInt < 1)) {
-        return [STPCard handleValidationErrorForParameter:@"expMonth" error:outError];
-    }
-    else if ([self expYear] && [STPCard isExpiredMonth:expMonthInt andYear:[self expYear]]) {
-        NSInteger currentYear = [STPCard currentYear];
-        // If the year is in the past, this is actually a problem with the expYear parameter, but it still means this month is not a valid month. This is pretty rare - it means someone set expYear on the card without validating it
-        if (currentYear > [self expYear])
-            return [STPCard handleValidationErrorForParameter:@"expYear" error:outError];
-        else
-            return [STPCard handleValidationErrorForParameter:@"expMonth" error:outError];
-    }
-    return YES;
-}
-
-- (BOOL)validateExpYear:(id *)ioValue error:(NSError **)outError
-{
-    if (*ioValue == nil) {
-        return [STPCard handleValidationErrorForParameter:@"expYear" error:outError];
-    }
-
-    NSString *ioValueString = [(NSString *) *ioValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    NSInteger expYearInt = [ioValueString integerValue];
-
-    if ((![STPCard isNumericOnlyString:ioValueString] || expYearInt < [STPCard currentYear])) {
-        return [STPCard handleValidationErrorForParameter:@"expYear" error:outError];
-    }
-    else if ([self expMonth] && [STPCard isExpiredMonth:[self expMonth] andYear:expYearInt]) {
-        return [STPCard handleValidationErrorForParameter:@"expMonth" error:outError];
-    }
-
-    return YES;
-}
-
-- (BOOL)validateCardReturningError:(NSError **)outError;
-{
-    // Order matters here
-    NSString *numberRef = [self number];
-    NSString *expMonthRef = [NSString stringWithFormat:@"%lu", (unsigned long) [self expMonth]];
-    NSString *expYearRef = [NSString stringWithFormat:@"%lu", (unsigned long) [self expYear]];
-    NSString *cvcRef = [self cvc];
-
-    // Make sure expMonth, expYear, and number are set.  Validate CVC if it is provided
-    return [self validateNumber:&numberRef error:outError] &&
-            [self validateExpYear:&expYearRef error:outError] &&
-            [self validateExpMonth:&expMonthRef error:outError] &&
-            (cvcRef == nil || [self validateCvc:&cvcRef error:outError]);
-}
 @end
+
+
+@implementation STPCard(PrivateMethods)
+
+- (instancetype)initWithAttributeDictionary:(NSDictionary *)attributeDictionary {
+    self = [self init];
+    
+    NSMutableDictionary *dict = [NSMutableDictionary dictionary];
+    
+    [attributeDictionary enumerateKeysAndObjectsUsingBlock:^(id key, id obj, __unused BOOL *stop) {
+        if (obj != [NSNull null]) {
+            dict[key] = obj;
+        }
+    }];
+    
+    if (self) {
+        _cardId = dict[@"id"];
+        _number = dict[@"number"];
+        _cvc = dict[@"cvc"];
+        _name = dict[@"name"];
+        _last4 = dict[@"last4"];
+        _dynamicLast4 = dict[@"dynamic_last4"];
+        NSString *brand = dict[@"brand"] ?: dict[@"type"];
+        if ([brand isEqualToString:@"Visa"]) {
+            _brand = STPCardBrandVisa;
+        } else if ([brand isEqualToString:@"American Express"]) {
+            _brand = STPCardBrandAmex;
+        } else if ([brand isEqualToString:@"MasterCard"]) {
+            _brand = STPCardBrandMasterCard;
+        } else if ([brand isEqualToString:@"Discover"]) {
+            _brand = STPCardBrandDiscover;
+        } else if ([brand isEqualToString:@"JCB"]) {
+            _brand = STPCardBrandJCB;
+        } else if ([brand isEqualToString:@"Diners Club"]) {
+            _brand = STPCardBrandDinersClub;
+        } else {
+            _brand = STPCardBrandUnknown;
+        }
+        NSString *funding = dict[@"funding"];
+        if ([funding.lowercaseString isEqualToString:@"credit"]) {
+            _funding = STPCardFundingTypeCredit;
+        } else if ([funding.lowercaseString isEqualToString:@"debit"]) {
+            _funding = STPCardFundingTypeDebit;
+        } else if ([funding.lowercaseString isEqualToString:@"prepaid"]) {
+            _funding = STPCardFundingTypePrepaid;
+        } else {
+            _funding = STPCardFundingTypeOther;
+        }
+        _fingerprint = dict[@"fingerprint"];
+        _country = dict[@"country"];
+        // Support both camelCase and snake_case keys
+        _expMonth = [(dict[@"exp_month"] ?: dict[@"expMonth"])intValue];
+        _expYear = [(dict[@"exp_year"] ?: dict[@"expYear"])intValue];
+        _addressLine1 = dict[@"address_line1"] ?: dict[@"addressLine1"];
+        _addressLine2 = dict[@"address_line2"] ?: dict[@"addressLine2"];
+        _addressCity = dict[@"address_city"] ?: dict[@"addressCity"];
+        _addressState = dict[@"address_state"] ?: dict[@"addressState"];
+        _addressZip = dict[@"address_zip"] ?: dict[@"addressZip"];
+        _addressCountry = dict[@"address_country"] ?: dict[@"addressCountry"];
+    }
+    
+    return self;
+}
+
+@end
+
+
