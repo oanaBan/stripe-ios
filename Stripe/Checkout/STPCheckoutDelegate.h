@@ -6,16 +6,14 @@
 //  Copyright (c) 2015 Stripe, Inc. All rights reserved.
 //
 
-@import Foundation;
-
-#import "STPNullabilityMacros.h"
+#import <Foundation/Foundation.h>
 
 @protocol STPCheckoutWebViewAdapter;
 @protocol STPCheckoutDelegate<NSObject>
-- (void)checkoutAdapterDidStartLoad:(stp_nonnull id<STPCheckoutWebViewAdapter>)adapter;
-- (void)checkoutAdapterDidFinishLoad:(stp_nonnull id<STPCheckoutWebViewAdapter>)adapter;
-- (void)checkoutAdapter:(stp_nonnull id<STPCheckoutWebViewAdapter>)adapter
-        didTriggerEvent:(stp_nonnull NSString *)event
-            withPayload:(stp_nonnull NSDictionary *)payload;
-- (void)checkoutAdapter:(stp_nonnull id<STPCheckoutWebViewAdapter>)adapter didError:(stp_nonnull NSError *)error;
+- (void)checkoutAdapterDidStartLoad:(nonnull id<STPCheckoutWebViewAdapter>)adapter;
+- (void)checkoutAdapterDidFinishLoad:(nonnull id<STPCheckoutWebViewAdapter>)adapter;
+- (void)checkoutAdapter:(nonnull id<STPCheckoutWebViewAdapter>)adapter
+        didTriggerEvent:(nonnull NSString *)event
+            withPayload:(nonnull NSDictionary *)payload;
+- (void)checkoutAdapter:(nonnull id<STPCheckoutWebViewAdapter>)adapter didError:(nonnull NSError *)error;
 @end

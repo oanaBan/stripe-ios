@@ -9,9 +9,11 @@
 #import "STPAPIClient.h"
 #import "StripeError.h"
 #import "STPBankAccount.h"
+#import "STPCardBrand.h"
 #import "STPCard.h"
+#import "STPCardValidationState.h"
+#import "STPCardValidator.h"
 #import "STPToken.h"
-#import "STPNullabilityMacros.h"
 
 #import "STPCheckoutOptions.h"
 #import "STPCheckoutViewController.h"
@@ -19,4 +21,5 @@
 #if TARGET_OS_IPHONE
 #import "Stripe+ApplePay.h"
 #import "STPAPIClient+ApplePay.h"
+#import "STPPaymentCardTextField.h"
 #endif

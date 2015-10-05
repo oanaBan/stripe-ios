@@ -8,6 +8,7 @@
 
 #import "STPCard.h"
 #import "StripeError.h"
+#import "STPCardValidator.h"
 
 @interface STPCard ()
 
@@ -45,7 +46,7 @@
 
 - (STPCardBrand)brand {
     if (_brand == STPCardBrandUnknown) {
-        return [self.class cardTypeFromNumber:self.number];
+        return [STPCardValidator brandForNumber:self.number];
     }
     return _brand;
 }
@@ -73,13 +74,9 @@
     if (*ioValue == nil) {
         return [self.class handleValidationErrorForParameter:@"number" error:outError];
     }
-
     NSString *ioValueString = (NSString *)*ioValue;
-    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"[\\s+|-]" options:NSRegularExpressionCaseInsensitive error:NULL];
-
-    NSString *rawNumber = [regex stringByReplacingMatchesInString:ioValueString options:0 range:NSMakeRange(0, [ioValueString length]) withTemplate:@""];
-
-    if (rawNumber == nil || rawNumber.length < 10 || rawNumber.length > 19 || ![self.class isLuhnValidString:rawNumber]) {
+    
+    if ([STPCardValidator validationStateForNumber:ioValueString validatingCardBrand:NO] != STPCardValidationStateValid) {
         return [self.class handleValidationErrorForParameter:@"number" error:outError];
     }
     return YES;
@@ -89,22 +86,9 @@
     if (*ioValue == nil) {
         return [self.class handleValidationErrorForParameter:@"number" error:outError];
     }
-    NSString *cvc = [(NSString *)*ioValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    BOOL validCvcLength = ({
-        BOOL valid;
-        switch (self.brand) {
-        case STPCardBrandAmex:
-        case STPCardBrandUnknown:
-            valid = (cvc.length == 3 || cvc.length == 4);
-            break;
-        default:
-            valid = (cvc.length == 3);
-            break;
-        }
-        valid;
-    });
-
-    if (![self.class isNumericOnlyString:cvc] || !validCvcLength) {
+    NSString *ioValueString = (NSString *)*ioValue;
+    
+    if ([STPCardValidator validationStateForCVC:ioValueString cardBrand:self.brand] != STPCardValidationStateValid) {
         return [self.class handleValidationErrorForParameter:@"cvc" error:outError];
     }
     return YES;
@@ -114,21 +98,10 @@
     if (*ioValue == nil) {
         return [self.class handleValidationErrorForParameter:@"expMonth" error:outError];
     }
-
     NSString *ioValueString = [(NSString *)*ioValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    NSInteger expMonthInt = [ioValueString integerValue];
-
-    if ((![self.class isNumericOnlyString:ioValueString] || expMonthInt > 12 || expMonthInt < 1)) {
+    
+    if ([STPCardValidator validationStateForExpirationMonth:ioValueString] != STPCardValidationStateValid) {
         return [self.class handleValidationErrorForParameter:@"expMonth" error:outError];
-    } else if ([self expYear] && [self.class isExpiredMonth:expMonthInt andYear:[self expYear] atDate:[NSDate date]]) {
-        NSUInteger currentYear = [self.class currentYear];
-        // If the year is in the past, this is actually a problem with the expYear parameter, but it still means this month is not a valid month. This is pretty
-        // rare - it means someone set expYear on the card without validating it
-        if (currentYear > [self expYear]) {
-            return [self.class handleValidationErrorForParameter:@"expYear" error:outError];
-        } else {
-            return [self.class handleValidationErrorForParameter:@"expMonth" error:outError];
-        }
     }
     return YES;
 }
@@ -137,16 +110,12 @@
     if (*ioValue == nil) {
         return [self.class handleValidationErrorForParameter:@"expYear" error:outError];
     }
-
     NSString *ioValueString = [(NSString *)*ioValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    NSInteger expYearInt = [ioValueString integerValue];
-
-    if ((![self.class isNumericOnlyString:ioValueString] || expYearInt < [self.class currentYear])) {
+    
+    NSString *monthString = [@(self.expMonth) stringValue];
+    if ([STPCardValidator validationStateForExpirationYear:ioValueString inMonth:monthString] != STPCardValidationStateValid) {
         return [self.class handleValidationErrorForParameter:@"expYear" error:outError];
-    } else if ([self expMonth] && [self.class isExpiredMonth:[self expMonth] andYear:expYearInt atDate:[NSDate date]]) {
-        return [self.class handleValidationErrorForParameter:@"expMonth" error:outError];
     }
-
     return YES;
 }
 
@@ -167,7 +136,7 @@
 }
 
 - (NSUInteger)hash {
-    return [self.fingerprint hash] ?: [self.number hash];
+    return [self.number hash];
 }
 
 - (BOOL)isEqualToCard:(STPCard *)other {
@@ -187,67 +156,6 @@
 }
 
 #pragma mark Private Helpers
-+ (BOOL)isLuhnValidString:(NSString *)number {
-    BOOL isOdd = true;
-    NSInteger sum = 0;
-
-    NSNumberFormatter *numberFormatter = [[NSNumberFormatter alloc] init];
-    for (NSInteger index = [number length] - 1; index >= 0; index--) {
-        NSString *digit = [number substringWithRange:NSMakeRange(index, 1)];
-        NSNumber *digitNumber = [numberFormatter numberFromString:digit];
-
-        if (digitNumber == nil) {
-            return NO;
-        }
-
-        NSInteger digitInteger = [digitNumber intValue];
-        isOdd = !isOdd;
-        if (isOdd) {
-            digitInteger *= 2;
-        }
-
-        if (digitInteger > 9) {
-            digitInteger -= 9;
-        }
-
-        sum += digitInteger;
-    }
-
-    return sum % 10 == 0;
-}
-
-+ (BOOL)isNumericOnlyString:(NSString *)aString {
-    NSCharacterSet *numericOnly = [NSCharacterSet decimalDigitCharacterSet];
-    NSCharacterSet *aStringSet = [NSCharacterSet characterSetWithCharactersInString:aString];
-
-    return [numericOnly isSupersetOfSet:aStringSet];
-}
-
-+ (NSCalendar *)gregorianCalendar {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated"
-#pragma clang diagnostic ignored "-Wunreachable-code"
-#pragma clang diagnostic ignored "-Wtautological-compare"
-    NSString *identifier = (&NSCalendarIdentifierGregorian != nil) ? NSCalendarIdentifierGregorian : NSGregorianCalendar;
-#pragma clang diagnostic pop
-    return [[NSCalendar alloc] initWithCalendarIdentifier:identifier];
-}
-
-+ (BOOL)isExpiredMonth:(NSInteger)month andYear:(NSInteger)year atDate:(NSDate *)date {
-    NSDateComponents *components = [[NSDateComponents alloc] init];
-    [components setYear:year];
-    // Cards expire at end of month
-    [components setMonth:month + 1];
-    [components setDay:1];
-    NSDate *expiryDate = [[self gregorianCalendar] dateFromComponents:components];
-    return ([expiryDate compare:date] == NSOrderedAscending);
-}
-
-+ (NSInteger)currentYear {
-    NSDateComponents *components = [[self gregorianCalendar] components:NSCalendarUnitYear fromDate:[NSDate date]];
-    return [components year];
-}
-
 + (BOOL)handleValidationErrorForParameter:(NSString *)parameter error:(NSError **)outError {
     if (outError != nil) {
         if ([parameter isEqualToString:@"number"]) {
@@ -301,24 +209,6 @@
                                   }];
 }
 
-+ (STPCardBrand)cardTypeFromNumber:(NSString *)number {
-    if ([number hasPrefix:@"34"] || [number hasPrefix:@"37"]) {
-        return STPCardBrandAmex;
-    } else if ([number hasPrefix:@"60"] || [number hasPrefix:@"62"] || [number hasPrefix:@"64"] || [number hasPrefix:@"65"]) {
-        return STPCardBrandDiscover;
-    } else if ([number hasPrefix:@"35"]) {
-        return STPCardBrandJCB;
-    } else if ([number hasPrefix:@"30"] || [number hasPrefix:@"36"] || [number hasPrefix:@"38"] || [number hasPrefix:@"39"]) {
-        return STPCardBrandDinersClub;
-    } else if ([number hasPrefix:@"4"]) {
-        return STPCardBrandVisa;
-    } else if ([number hasPrefix:@"5"]) {
-        return STPCardBrandMasterCard;
-    } else {
-        return STPCardBrandUnknown;
-    }
-}
-
 @end
 
 
@@ -370,6 +260,7 @@
         }
         _fingerprint = dict[@"fingerprint"];
         _country = dict[@"country"];
+        _currency = dict[@"currency"];
         // Support both camelCase and snake_case keys
         _expMonth = [(dict[@"exp_month"] ?: dict[@"expMonth"])intValue];
         _expYear = [(dict[@"exp_year"] ?: dict[@"expYear"])intValue];

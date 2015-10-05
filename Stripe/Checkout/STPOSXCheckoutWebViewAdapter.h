@@ -8,14 +8,14 @@
 
 #if !TARGET_OS_IPHONE
 
-@import Foundation;
-@import WebKit;
+#import <Foundation/Foundation.h>
+#import <WebKit/WebKit.h>
 
 #import "STPCheckoutWebViewAdapter.h"
-#import "STPNullabilityMacros.h"
+
 
 @interface STPOSXCheckoutWebViewAdapter : NSObject<STPCheckoutWebViewAdapter>
-@property (nonatomic, stp_nullable) WebView *webView;
+@property (nonatomic, nullable) WebView *webView;
 @end
 
 #endif
